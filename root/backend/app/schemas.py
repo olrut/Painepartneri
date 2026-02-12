@@ -1,9 +1,10 @@
-from beanie import PydanticObjectId
+import uuid
 from fastapi_users import schemas
 from pydantic import BaseModel
+from datetime import datetime
 
 
-class UserRead(schemas.BaseUser[PydanticObjectId]):
+class UserRead(schemas.BaseUser[uuid.UUID]):
     pass
 
 
@@ -24,6 +25,6 @@ class BpMeasurement(BaseModel):
     systolic: int
     diastolic: int
     pulse: int
-    timestamp: str
-    tags: list[str] = None
-    notes: str = None
+    timestamp: datetime
+    tags: list[str] | None = None
+    notes: str | None = None

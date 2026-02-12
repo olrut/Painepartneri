@@ -1,5 +1,5 @@
 import React, {useState} from "react";
-import {Link, useNavigate} from "react-router-dom";
+import {Link, useNavigate, useLocation} from "react-router-dom";
 import {publicApi} from "./api.ts";
 
 interface LoginProps {
@@ -13,42 +13,36 @@ const Login: React.FC<LoginProps> = ({setUser, currentUser}) => {
     const [error, setError] = useState<string>("");
 
     const navigate = useNavigate();
-    if (currentUser) {
-        navigate("/dashboard");
-    }
+    React.useEffect(() => {
+        if (currentUser) {
+            navigate("/dashboard");
+        }
+    }, [currentUser, navigate]);
+    const location = useLocation();
+    const verified = new URLSearchParams(location.search).get("verified") === "1";
 
     const handleSubmit = async (event) => {
         event.preventDefault();
-        const formData = new FormData();
-        formData.set('username', email);
-        formData.set('password', password);
-        publicApi.post(
-            '/auth/jwt/login',
-            formData,
-            {
-                headers: {
-                    'Content-Type': 'multipart/form-data',
-                },
-            },
-        )
-            .then((response) => {
-                // Save JWT token to localStorage
-                localStorage.setItem("access_token", response.data.access_token);
-                const user = {
-                    email: email,
-                    token: response.data.access_token
-                }
-                setUser(user);
-                navigate("/dashboard");
-                console.log(response);
-
-            })
-            .catch((error) => {
-                    // TODO: Handle error messages
-                    setError("Kirjautuminen epäonnistui: " + error);
-                }
-            )
-        ;
+        try {
+            const response = await publicApi.post('/auth/login', { email, password });
+            localStorage.setItem("access_token", response.data.access_token);
+            const user = { email, token: response.data.access_token };
+            setUser(user);
+            navigate("/dashboard");
+        } catch (err: any) {
+            const detail = err?.response?.data?.detail;
+            if (detail === 'USER_NOT_FOUND') {
+                setError('Käyttäjää ei löydy');
+            } else if (detail === 'USER_INACTIVE') {
+                setError('Käyttäjätili on passivoitu');
+            } else if (detail === 'USER_NOT_VERIFIED') {
+                setError('Sähköpostia ei ole vahvistettu');
+            } else if (detail === 'INVALID_PASSWORD') {
+                setError('Virheellinen salasana');
+            } else {
+                setError('Kirjautuminen epäonnistui');
+            }
+        }
     }
 
     return (
@@ -59,12 +53,17 @@ const Login: React.FC<LoginProps> = ({setUser, currentUser}) => {
                 </h1>
             </div>
 
+            {verified && (
+                <div className="bg-green-100 border-l-4 border-green-500 text-green-700 p-4 mt-5" role="alert">
+                    <p>Tilisi on vahvistettu. Kirjaudu sisään.</p>
+                </div>
+            )}
+
             {error && (
                 <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mt-5" role="alert">
                     <p>{error}</p>
                 </div>
             )}
-
 
             <div className="mt-10 sm:mx-auto sm:w-full sm:max-w-sm">
                 <form onSubmit={handleSubmit} className="space-y-6">

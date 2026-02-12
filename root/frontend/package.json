@@ -6,8 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "lint": "eslint PainepartneriFront",
-    "preview": "vite preview",
+    "lint": "eslint src --ext .ts,.tsx",
+    "preview": "vite preview"
   },
   "dependencies": {
     "@emotion/react": "^11.13.5",

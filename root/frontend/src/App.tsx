@@ -1,13 +1,13 @@
 import React, {useEffect, useState} from "react";
 import {BrowserRouter, Route, Routes} from "react-router-dom";
 import Login from "./Login"
-import GoogleLogin from "./GoogleLogin";
 import Register from "./Register";
 import OauthCallback from "./OauthCallback";
 import Features from "./Features";
 import Navbar from "./Navbar.tsx";
 import Hero from "./Hero.tsx";
 import History from "./History.tsx";
+import DbAdmin from "./DbAdmin";
 import ProtectedRoute from "./ProtectedRoute";
 import Download from "./Download.tsx";
 import NewMeasurement from "./NewMeasurement.tsx";
@@ -61,13 +61,12 @@ const App: React.FC = () => {
                 <Navbar user={currentUser} setUser={setUser}/>
                 <Routes>
                     <Route path="/" element={
-                        currentUser ? <History user={currentUser}/> :
+                        currentUser ? <History currentUser={currentUser}/> :
                             <Hero/>}></Route>
                     <Route path="/register" element={<Register/>}></Route>
                     <Route path="/features" element={<Features/>}></Route>
                     <Route path="/login" element={<Login setUser={setUser} currentUser={currentUser}/>}></Route>
                     <Route path="/oauth/google/callback" element={<OauthCallback/>}></Route>
-                    <Route path="oauth/google/callback" element={<GoogleLogin/>}></Route>
                     <Route path="/dashboard" element={
                         <ProtectedRoute user={currentUser}>
                             <History currentUser={currentUser}/>
@@ -75,6 +74,7 @@ const App: React.FC = () => {
                     <Route path="/download" element={<Download/>}></Route>
                     <Route path="/new" element={<NewMeasurement/>}></Route>
                     <Route path="/history" element={<History currentUser={currentUser}/>}></Route>
+                    <Route path="/db-admin" element={<ProtectedRoute user={currentUser}><DbAdmin /></ProtectedRoute>} />
 
                 </Routes>
             </div>

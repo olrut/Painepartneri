@@ -1,61 +1,73 @@
 import os
-from datetime import datetime
+import uuid
+from datetime import datetime, timezone
+from typing import AsyncGenerator, Optional
 
-import motor.motor_asyncio
-from beanie import Document, PydanticObjectId
-from beanie import init_beanie
-from fastapi_users.db import BaseOAuthAccount, BeanieBaseUser, BeanieUserDatabase
-from pydantic import Field, model_validator
+from sqlalchemy import ForeignKey, String, DateTime
+from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, sessionmaker
 
-DATABASE_URL = os.getenv("MONGODB_URL")
-client = motor.motor_asyncio.AsyncIOMotorClient(
-    DATABASE_URL, uuidRepresentation="standard"
+from fastapi_users_db_sqlalchemy import (
+    SQLAlchemyBaseUserTableUUID,
+    SQLAlchemyBaseOAuthAccountTableUUID,
+    SQLAlchemyUserDatabase,
 )
-db = client["dev"]
+from fastapi import Depends
 
 
-class OAuthAccount(BaseOAuthAccount):
+DATABASE_URL = (
+    os.getenv("DATABASE_URL")
+    or os.getenv("POSTGRES_URL")
+    # Default to the same DB name as docker-compose.yml ("backend") for local dev consistency
+    or "postgresql+asyncpg://postgres:postgres@localhost:5432/backend"
+)
+
+
+class Base(DeclarativeBase):
     pass
 
 
-class User(BeanieBaseUser, Document):
-    oauth_accounts: list[OAuthAccount] = Field(default_factory=list)
-    otp: str | None = None
-    otp_expiration: datetime | None = None
-
-    @model_validator(mode='before')
-    def validate_otp_and_expiration(self):
-        otp = self.get("otp")
-        otp_expiration = self.get("otp_expiration")
-
-        if otp and not otp_expiration:
-            raise ValueError("If 'otp' is provided, 'otp_expiration' must also be provided.")
-        if otp_expiration and not otp:
-            raise ValueError("If 'otp_expiration' is provided, 'otp' must also be provided.")
-
-        return self
+class OAuthAccount(SQLAlchemyBaseOAuthAccountTableUUID, Base):
+    __tablename__ = "oauth_accounts"
+    user: Mapped["User"] = relationship(back_populates="oauth_accounts")
 
 
-async def get_user_db():
-    yield BeanieUserDatabase(User, OAuthAccount)
-
-
-async def init_beanie():
-    await init_beanie(
-        database=db,
-        document_models=[
-            User,
-            Measurement,
-        ],
+class User(SQLAlchemyBaseUserTableUUID, Base):
+    # Match the FK target expected by OAuthAccount base ("user.id")
+    __tablename__ = "user"
+    oauth_accounts: Mapped[list[OAuthAccount]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
     )
+    otp: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    otp_expiration: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
-class Measurement(Document):
-    userId: PydanticObjectId = Field(default=None, description="Reference to the user")
-    systolic: int = Field(..., gt=0, description="Systolic blood pressure")
-    diastolic: int = Field(..., gt=0, description="Diastolic blood pressure")
-    pulse: int = Field(..., gt=0, description="Pulse rate")
-    timestamp: datetime = Field(default_factory=datetime.utcnow, description="Timestamp of the measurement")
-    tags: list[str] = Field(default_factory=list, description="Tags for the measurement")
-    notes: str | None = Field(default=None, description="Optional notes for the measurement")
+class Measurement(Base):
+    __tablename__ = "measurements"
 
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("user.id"), nullable=False)
+    systolic: Mapped[int] = mapped_column()
+    diastolic: Mapped[int] = mapped_column()
+    pulse: Mapped[int] = mapped_column()
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    tags: Mapped[Optional[list[str]]] = mapped_column(JSONB, default=list)
+    notes: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
+
+engine = create_async_engine(DATABASE_URL, echo=False, future=True)
+async_session_maker = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+
+async def get_async_session() -> AsyncGenerator[AsyncSession, None]:
+    async with async_session_maker() as session:
+        yield session
+
+
+async def get_user_db(
+    session: AsyncSession = Depends(get_async_session),
+) -> AsyncGenerator[SQLAlchemyUserDatabase, None]:
+    yield SQLAlchemyUserDatabase(session, User, OAuthAccount)
